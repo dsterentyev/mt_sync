@@ -13,3 +13,5 @@ Unix/Linux environment, perl, ssh, sshpass, Algorithm::Diff perl module
 
 Usage:
 look at usage.txt
+
+Version: 0.001-20191119
