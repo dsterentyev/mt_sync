@@ -1,2 +1,39 @@
 # mt_sync
 mt_sync.pl - script for smart transfer RouterOS configuration from one router to another
+
+usage:
+./mt_sync.pl [configfile] [-arg1=somevalue] ... [-argN=somevalue]
+    configfile   - name of file with configuration variables or '-' 
+                   (which means starting without reading config file)
+    arg1 .. argN - optional arguments that overrides variables 
+                   in config file
+                   
+list of command line arguments:
+    -mip         - ip address of router from which configuration will be taken
+    -mlogin      - login of such router 
+    -mpass       - password of such router (if exists)
+    -mport       - tcp port of such router (default value is 22)
+    -msshargs    - optional arguments for ssh of such router (e.g. ssh key)
+    -sip         - ip address of router to which configuration will be saved
+    -slogin      - login of such router
+    -spass       - password of such router (if exists)
+    -sport       - tcp port of such router (default value is 22)
+    -ssshargs    - optional arguments for ssh of such router (e.g. ssh key)
+    -mconf       - confiuration of master router will be taken from file 
+                   instead of router (or from STDIN if passed '-')
+    -sconf       - confiuration of slave will be taken from file instead 
+                   of router (or from STDIN if passed '-')
+    -outconf     - resulting lines will be saved to file instead of router 
+                   (or to STDIN if passed '-')
+    -pcomment    - protective comment (configuration lines which contains 
+                   comment included this value will be ignored by script)
+    -ibranches   - list of configuraion branches which will be ignored by 
+                   script (quoted by single quotes and separated by comma)
+    -obranches   - list of branches in which order of lines will be preserved
+                   (quoted by single quotes and separated by comma)
+    -force       - don't compare current and previous configuration 
+    -oldconfdir  - override direcory for storing previous configurations 
+                   (default is current direcory)
+    -sshverbose  - show commands during transfer config to router via ssh 
+    -quietdiff   - no message about no changes in config since last run 
+
