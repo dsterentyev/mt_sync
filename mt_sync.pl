@@ -475,11 +475,17 @@ sub read_config
     }    
     return(\@lines);
 }
+
+#skip notes and combine multiline statements into single line
+#also checking for 
 sub prefilter_config
 {
     my $contl = '';
     my $c = 0;
     my @conf = ();
+    my $bline;              # last line that start from /
+    my $ncnt = 0;           # counter of lines that started from /
+    my $bscnt = 0;          # counter of lines that not started from /
     foreach (@{$_[0]})
     {
         chomp;
@@ -491,10 +497,37 @@ sub prefilter_config
             }
         }
         $c++;
-        next if /^\#/;
+        if(/^\#/)
+        {
+            if($ncnt > 0)
+            {
+                s/\#//;
+                print "In section '$bline' found followed RouterOS note: \#$_\n";
+                die("Possible config is in inconsistent state. Unpredictable results may accurs, stopping work\n");
+            }
+            else
+            {
+                next;
+            }
+        };
         s/^\s+//;
         s/\s+$//;
         #check for multiline statement
+        if(! /^\// && $contl eq '')
+        {
+            $_ = "$bline $_";
+            if($bscnt == 0)
+            {
+                pop(@conf);
+                $bscnt++;
+            }
+        }
+        else
+        {
+            $bline = $_;
+            $bscnt = 0;
+            $ncnt++;
+        }
         my $cont = /\\\s*$/ ? 1 : 0;
         if($cont)
         {
@@ -620,7 +653,7 @@ sub parse_line
     }
     else
     {
-        die("error: can't parse $line\n:");
+        die("error: can't parse: $line\n");
     }
     return(\%vals);
 }
