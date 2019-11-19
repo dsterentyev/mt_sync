@@ -82,7 +82,7 @@ if(defined $args{'mconf'})
     #read from file
     if($args{'mconf'} ne '-')
     {
-        $mconfig = prefilter_config(file_get_contents($args{'mconf'}));
+        $mconfig = prefilter_config(file_get_contents($args{'mconf'}), 1);
     }
     #read from STDIN
     else
@@ -93,13 +93,13 @@ if(defined $args{'mconf'})
             chomp;
             push(@lines, $_);
         }
-        $mconfig = prefilter_config(\@lines);
+        $mconfig = prefilter_config(\@lines, 1);
     }
 }
 else
 {
     #retrieve from router via ssh
-    $mconfig = prefilter_config(read_config($master_ip, $master_ssh_login, $master_ssh_password, $master_ssh_port, $master_ssh_args));
+    $mconfig = prefilter_config(read_config($master_ip, $master_ssh_login, $master_ssh_password, $master_ssh_port, $master_ssh_args), 1);
 }
 $mconfig2 = filter_config($mconfig, \%branches_ignored, $protective_comment, \%mbranches, 0);
 
@@ -129,7 +129,7 @@ if(defined $args{'sconf'})
     #read from file
     if($args{'sconf'} ne '-')
     {
-        $sconfig = prefilter_config(file_get_contents($args{'sconf'}));
+        $sconfig = prefilter_config(file_get_contents($args{'sconf'}), 0);
     }
     elsif($args{'sconf'} eq '-' && defined $args{'mconf'} && $args{'mconf'} eq '-')
     {
@@ -144,13 +144,13 @@ if(defined $args{'sconf'})
             chomp;
             push(@lines, $_);
         }
-        $sconfig = prefilter_config(\@lines);
+        $sconfig = prefilter_config(\@lines, 0);
     }
 }
 else
 {
     #retrieve from router via ssh
-    $sconfig = prefilter_config(read_config($slave_ip, $slave_ssh_login, $slave_ssh_password, $slave_ssh_port, $slave_ssh_args));
+    $sconfig = prefilter_config(read_config($slave_ip, $slave_ssh_login, $slave_ssh_password, $slave_ssh_port, $slave_ssh_args), 0);
 }
 
 #dump($sconfig);
@@ -499,16 +499,12 @@ sub prefilter_config
         $c++;
         if(/^\#/)
         {
-            if($ncnt > 0)
+            if($ncnt > 0 && $_[1] == 1)
             {
-                s/\#//;
-                print "In section '$bline' found followed RouterOS note: \#$_\n";
+                warn("In section '$bline' of master router config found followed RouterOS note: \n\#$_\n");
                 die("Possible config is in inconsistent state. Unpredictable results may accurs, stopping work\n");
             }
-            else
-            {
-                next;
-            }
+            next;
         };
         s/^\s+//;
         s/\s+$//;
