@@ -9,7 +9,7 @@ Abilities:
 - some sanity checking during processing configs
 
 Requirements:
-Unix/Linux environment, ssh, sshpass, Algorithm::Diff perl module
+Unix/Linux environment, perl, ssh, sshpass, Algorithm::Diff perl module
 
 Usage:
-look in usage.txt
+look at usage.txt
