@@ -3,16 +3,14 @@
 #master router params
 $master_ip = '10.32.255.13';                    # ip
 $master_ssh_login = 'conf_sync';                # login
-$master_ssh_password = 'Kuaf-7ye4ang!oh6li';    # password    
-$master_ssh_key = 'conf_sync';                  # ssh key (argument for -i)
+$master_ssh_password = 'some-P@sS\/\/0Rcl';     # password    
 $master_ssh_port = 52222;                       # ssh port
 $master_ssh_args = '';                          # additional parameters for ssh
 
 #slave router params
 $slave_ip = '10.32.255.14';                     # ip
 $slave_ssh_login = 'conf_sync';                 # login
-$slave_ssh_key = 'conf_sync';                   # ssh key (argument for -i)
-$slave_ssh_password = 'Kuaf-7ye4ang!oh6li';     # password
+$slave_ssh_password = 'some-P@sS\/\/0Rcl';      # password
 $slave_ssh_port = 52222;                        # ssh port
 $slave_ssh_args = '';                           # additional parameters for ssh
 
