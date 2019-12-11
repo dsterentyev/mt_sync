@@ -1,6 +1,14 @@
 #!/usr/bin/perl
 
+#toggle it to 0 if you want use external ssh and sshpass
+my $use_internal_ssh = 1;
+
+#use Data::Dump qw/dump/;
 use Algorithm::Diff qw(diff);
+if($use_internal_ssh == 1)
+{
+    use Net::SSH::Perl;
+}
 
 #don't edit this, use instead command line args or config file
 $master_ip = '';
@@ -15,6 +23,7 @@ $slave_ssh_port = 22;
 $slave_ssh_args = '';
 $protective_comment = '';
 %branches_ignored = ();
+%branches_force_included = ();
 %branches_method_set = ();
 %branches_ordered = ();
 $old_configs_dir = '.';
@@ -48,6 +57,7 @@ while(my $arg = shift @ARGV)
         elsif( $parm eq 'pcomment')    { $protective_comment = $pvalue; }
         elsif( $parm eq 'ibranches')   { foreach my $karg (split(/,/, $pvalue)) { $branches_ignored{$karg} = 1; }}
         elsif( $parm eq 'obranches')   { foreach my $karg (split(/,/, $pvalue)) { $branches_ordered{$karg} = 1; }}
+        elsif( $parm eq 'fbranches')   { foreach my $karg (split(/,/, $pvalue)) { $branches_force_included{$karg} = 1; }}
         elsif( $parm eq 'oldconfdir')  { $old_configs_dir = $pvalue; }
         elsif( $parm eq 'force')       { $args{$parm} = $pvalue; }
         elsif( $parm eq 'sshverbose')  { $args{$parm} = $pvalue; }
@@ -73,7 +83,8 @@ while(my $arg = shift @ARGV)
 
 #line numbers mapping for sections of slave config (for exclusion of [nosync] lines)
 %line_nums_map = ();
-%line_nums_map2 = ();
+#line numbers mapping for sections of master config (for exclusion of [nosync] lines)
+%line_nums_map_m = ();
 
 #retrieve master router config
 my $mconfig;
@@ -101,7 +112,7 @@ else
     #retrieve from router via ssh
     $mconfig = prefilter_config(read_config($master_ip, $master_ssh_login, $master_ssh_password, $master_ssh_port, $master_ssh_args), 1);
 }
-$mconfig2 = filter_config($mconfig, \%branches_ignored, $protective_comment, \%mbranches, 0);
+$mconfig2 = filter_config($mconfig, \%branches_ignored, $protective_comment, \%mbranches, 0, \%branches_force_included);
 
 if(! defined $args{'force'})
 {
@@ -155,9 +166,10 @@ else
 
 #dump($sconfig);
 
-filter_config($sconfig, \%branches_ignored, $protective_comment, \%sbranches, 1);
+filter_config($sconfig, \%branches_ignored, $protective_comment, \%sbranches, 1, \%branches_force_included);
 
-#dump(%line_nums_map );
+#dump(%line_nums_map_m);
+#dump(%line_nums_map);
 
 #check branches actions
 foreach (keys %bactions)
@@ -189,7 +201,8 @@ my @cmds = ();
 foreach $section (@brorder)
 {
     #skip ignored branches
-    next if defined $branches_ignored{$section};
+#    next if defined($branches_ignored{$section}) && ! defined($branches_force_included{$section});
+#    print "$section \n";
     my $ordered = defined($branches_ordered{$section}) ? 1 : 0;
     #process ordered branch
     if($ordered == 1)
@@ -281,7 +294,7 @@ foreach $section (@brorder)
             }
             else
             {
-                push(@dellist, $c);
+                push(@dellist, $line_nums_map{"$section:add"}->[$c]);
             }
         }
         #removing lines
@@ -330,21 +343,40 @@ elsif(defined $args{'outconf'})
 #to slave router via ssh
 else
 {
-    my $cmd = "/usr/bin/ssh -T $slave_ssh_args -p $slave_ssh_port $slave_ssh_login\@$slave_ip";
-    if($slave_ssh_password ne '')
+    if($use_internal_ssh)
     {
-        $ENV{'SSHPASS'} = $slave_ssh_password;
-        $cmd = "/usr/bin/sshpass -e $cmd";
+        $ssh = Net::SSH::Perl->new($slave_ip, options => [ "Port $slave_ssh_port", "Protocol 2", "MACs +hmac-sha1" ] ) or die "error: ssh failed to connect $ip!\n";
+        $ssh->login($slave_ssh_login, $slave_ssh_password) or die "error: ssh failed to authenticate on $ip!\n"; 
+        my $cnt = 0;
+        foreach my $cmd (@cmds)
+        {
+            warn "[$cnt] $cmd\n" if defined $args{'sshverbose'};
+            my($stdout, $stderr, $exit) = $ssh->cmd($cmd);
+            if($exit != 0 || $stderr ne '' || $stdout ne '')
+            {
+                warn "error $exit while executing command:\n$cmd\n$stdout$stderr\n\n";
+            }
+            $cnt++;
+        }
     }
-    open SSHPIPE,"| $cmd" or die('can not put resulting config to slave router via ssh!');
-    my $cnt = 0;
-    foreach my $cmd (@cmds)
+    else
     {
-        print "[$cnt] $cmd\n" if defined $args{'sshverbose'};
-        print SSHPIPE "$cmd\n";
-        $cnt++;
+        my $cmd = "/usr/bin/ssh -T $slave_ssh_args -p $slave_ssh_port $slave_ssh_login\@$slave_ip";
+        if($slave_ssh_password ne '')
+        {
+            $ENV{'SSHPASS'} = $slave_ssh_password;
+            $cmd = "/usr/bin/sshpass -e $cmd";
+        }
+        open SSHPIPE,"| $cmd" or die('can not put resulting config to slave router via ssh!');
+        my $cnt = 0;
+        foreach my $cmd (@cmds)
+        {
+            print "[$cnt] $cmd\n" if defined $args{'sshverbose'};
+            print SSHPIPE "$cmd\n";
+            $cnt++;
+        }
+        close SSHPIPE;
     }
-    close SSHPIPE;
 }
 
 #save config of master router for future comparison
@@ -356,7 +388,7 @@ if(! defined $args{'force'})
 #done
 0;
 
-#shift line numbers map [lines without protective comments] -> [all lines]
+#shifts line numbers map [lines without protective comments] -> [all lines]
 sub line_nums_map_fix
 {
     my $sect = $_[0];
@@ -401,17 +433,26 @@ sub filter_config
     my $brref = $_[3];
     my @filtered = ();
     $re_filter = join('|', keys %{$_[1]});
+    $re_unfilter = join('|', keys %{$_[5]});
+#    print "$re_filter\n";
+#    print "$re_unfilter\n";
     #section line number counter
     my $scnt2 = 0;
+    my $scnt2s = 0;
     my $oldbr = '';
     foreach my $ln (@$conf)
     {
         #check for excluded sections
-        next if $re_filter ne '' && $ln =~ /^\/($re_filter)/;
+        if($re_filter ne '' && $ln =~ /^\/($re_filter)/ && ($re_unfilter eq '' || $ln !~ /^\/($re_unfilter)/))
+        {
+#            print "ignore found: $ln\n";
+            next;
+        };
         my $parsed = parse_line($ln);
         my $br = $parsed->{'_branch'};
         #reset counter on beginning of new section
         $scnt2 = 0 if $oldbr ne $br;
+        $scnt2s = 0 if $oldbr ne $br;
         $oldbr = $br;
         my $action = $parsed->{'_action'};
         #checking for set / add
@@ -424,6 +465,7 @@ sub filter_config
             
         #checking for [nosync] comment in config line
         $scnt2++ if $action eq 'add';
+        $scnt2s++ if $action eq 'set';
         if($_[2] ne '' && defined $$parsed{'comment'} && index($$parsed{'comment'}, $_[2]) >= 0)
         {
             #skip line for master config
@@ -434,7 +476,8 @@ sub filter_config
         if(! defined $brref->{"$br:$action"}) 
         {
             $brref->{"$br:$action"} = [] ;
-            $line_nums_map{"$br:$action"} = [];
+            $line_nums_map{"$br:$action"} = [] if $_[4] == 1;
+            $line_nums_map_m{"$br:$action"} = [] if $_[4] == 0;
         }
         #save config line to properly section
         push(@{$brref->{"$br:$action"}}, $ln);
@@ -445,10 +488,33 @@ sub filter_config
             $brorder{$br} = 1;
         }
         #line number section mapping for [nosync] exclusion
-        if($_[4] == 1 && $action eq 'add')
+        #!!!!! need to be rewritten because non optimal and partially unnecessary
+        if($action eq 'add')
         {
-            push(@{$line_nums_map{"$br:$action"}}, $scnt2 - 1);
-            $line_nums_map{"$br:$action:all"} = $scnt2;
+            if($_[4] == 1)
+            {
+                push(@{$line_nums_map{"$br:$action"}}, $scnt2 - 1);
+                $line_nums_map{"$br:$action:all"} = $scnt2;
+            }
+            else
+            {
+                push(@{$line_nums_map_m{"$br:$action"}}, $scnt2 - 1);
+                $line_nums_map_m{"$br:$action:all"} = $scnt2;
+            }
+
+        }
+        elsif($action eq 'set')
+        {
+            if($_[4] == 1)
+            {
+                push(@{$line_nums_map{"$br:$action"}}, $scnt2 - 1);
+                $line_nums_map{"$br:$action:all"} = $scnt2;
+            }
+            else
+            {
+                push(@{$line_nums_map_m{"$br:$action"}}, $scnt2 - 1);
+                $line_nums_map_m{"$br:$action:all"} = $scnt2;
+            }
         }
     }
 
@@ -463,6 +529,18 @@ sub read_config
     my $pass = $_[2];
     my $port = $_[3];
     my $sshargs = $_[4];
+    if($use_internal_ssh)
+    {
+        $ssh = Net::SSH::Perl->new($ip, options => [ "Port $port", "Protocol 2", "MACs +hmac-sha1" ] ) or die "error: ssh failed to connect $ip!\n";
+        $ssh->login($user, $pass) or die "error: ssh failed to authenticate on $ip!\n"; 
+        my($stdout, $stderr, $exit) = $ssh->cmd('/export compact terse verbose');
+        if($exit != 0 || $stderr ne '')
+        {
+            die "error $exit while exporting config!\n$stdout$stderr\n";
+        }
+        my @lines = split(/\r\n/, $stdout);
+        return(\@lines);
+    }
     my $cmd = "/usr/bin/ssh $sshargs -p $port $user\@$ip '/export compact terse verbose'";
     if($pass ne '')
     {
@@ -477,7 +555,7 @@ sub read_config
 }
 
 #skip notes and combine multiline statements into single line
-#also checking for 
+#also minimal checking for config inconsistencies
 sub prefilter_config
 {
     my $contl = '';
@@ -655,6 +733,7 @@ sub parse_line
 }
 
 #save array of strings to file
+#args - $filename, \@text_lines
 sub file_put_contents
 {
     open FILE,">$_[0]" or die "error: can not open file $_[0] for write";
@@ -712,6 +791,9 @@ list of command line arguments:
                    comment included this value will be ignored by script)
     -ibranches   - list of configuraion branches which will be ignored by 
                    script (quoted by single quotes and separated by comma)
+    -fbranches   - list of configuraion branches which will be not ignored 
+                   even if presents in ignore list (quoted by single quotes 
+                   and separated by comma)
     -obranches   - list of branches in which order of lines will be preserved
                    (quoted by single quotes and separated by comma)
     -force       - don\'t compare current and previous configuration 
