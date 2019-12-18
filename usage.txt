@@ -28,6 +28,9 @@ list of command line arguments:
                    comment included this value will be ignored by script)
     -ibranches   - list of configuraion branches which will be ignored by 
                    script (quoted by single quotes and separated by comma)
+    -fbranches   - list of configuraion branches which will be not ignored 
+                   even if presents in ignore list (quoted by single quotes 
+                   and separated by comma)
     -obranches   - list of branches in which order of lines will be preserved
                    (quoted by single quotes and separated by comma)
     -force       - don't compare current and previous configuration 
