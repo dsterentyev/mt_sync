@@ -4,6 +4,7 @@
 my $use_internal_ssh = 1;
 
 #use Data::Dump qw/dump/;
+use Digest::SHA qw/sha512_hex/;
 use Algorithm::Diff qw(diff);
 if($use_internal_ssh == 1)
 {
@@ -116,17 +117,10 @@ $mconfig2 = filter_config($mconfig, \%branches_ignored, $protective_comment, \%m
 
 if(! defined $args{'force'})
 {
-    `/usr/bin/touch $old_configs_dir/old_$master_ip.conf`;
-    $old_config = file_get_contents("$old_configs_dir/old_$master_ip.conf");
+    `/usr/bin/touch $old_configs_dir/old_$master_ip.conf.sha512`;
+    $old_config = file_get_contents("$old_configs_dir/old_$master_ip.conf.sha512");
 
-    #checking for master config was updated since last run
-    $mdiff = diff($old_config, $mconfig2);
-
-    file_put_contents("$old_configs_dir/old_$master_ip.conf", $mconfig2);
-
-    #dump($mdiff);
-
-    if(scalar(@$mdiff) == 0)
+    if($old_config->[0] eq sha512_hex(join("\n", @$mconfig2)))
     {
         print "none changed in config of $master_ip since last run, exiting\n" if ! defined $args{'quietdiff'};
         exit(0);
@@ -312,11 +306,11 @@ foreach $section (@brorder)
         #--------------------------#
         # process 'set' statements #  
         #--------------------------#
-        
+
         #create empty set of lines for diff
         $mbranches{"$section:set"} = [] if ! defined $mbranches{"$section:set"};
         $sbranches{"$section:set"} = [] if ! defined $sbranches{"$section:set"};
-        
+
         if(join("\n", @{$mbranches{"$section:set"}}) ne join("\n", @{$sbranches{"$section:set"}}))
         {
             #simple replace config with all lines without deletion
@@ -380,9 +374,9 @@ else
 }
 
 #save config of master router for future comparison
-if(! defined $args{'force'})
+if(! defined $args{'outconf'})
 {
-    file_put_contents("$old_configs_dir/old_$master_ip.conf", $mconfig2);
+    file_put_contents("$old_configs_dir/old_$master_ip.conf.sha512", [ sha512_hex(join("\n", @$mconfig2)) ] );
 }
 
 #done
@@ -488,7 +482,6 @@ sub filter_config
             $brorder{$br} = 1;
         }
         #line number section mapping for [nosync] exclusion
-        #!!!!! need to be rewritten because non optimal and partially unnecessary
         if($action eq 'add')
         {
             if($_[4] == 1)
@@ -555,7 +548,7 @@ sub read_config
 }
 
 #skip notes and combine multiline statements into single line
-#also minimal checking for config inconsistencies
+#also checking for 
 sub prefilter_config
 {
     my $contl = '';
@@ -733,7 +726,6 @@ sub parse_line
 }
 
 #save array of strings to file
-#args - $filename, \@text_lines
 sub file_put_contents
 {
     open FILE,">$_[0]" or die "error: can not open file $_[0] for write";
