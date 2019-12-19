@@ -189,7 +189,11 @@ foreach (keys %bactions)
     }
 }
 
+#mikrotik commands for apply changes
 my @cmds = ();
+
+#comments to commands
+my @cmdcs = ();
 
 #compare slave and master config section by section
 foreach $section (@brorder)
@@ -226,6 +230,7 @@ foreach $section (@brorder)
                     {
                         my $dlnum = $pos + $delta;
                         my $dlnum2 = $line_nums_map{"$section:add"}->[$dlnum];
+                        push(@cmdcs, "\n\# removing ordered: $data");
                         $cmd = "\/$section remove [ :pick [ \/$section find where ! (dynamic || default || builtin)] $dlnum2 ]";
                         &line_nums_map_fix("$section:add", $dlnum, -1);
                         $delta--;
@@ -236,6 +241,7 @@ foreach $section (@brorder)
                         my $dlnum = $pos;
                         my $dlnum2 = $line_nums_map{"$section:add"}->[$dlnum];
                         $last_line = $dlnum >= scalar(@{$line_nums_map{"$section:add"}}) ? 1 : 0;
+                        push(@cmdcs, "\n\# adding ordered:");
                         $cmd = $data . ($last_line ? '' : " place-before=[:pick [\/$section find where ! (dynamic || default || builtin)] $dlnum2 ]");
                         $delta++;
                         &line_nums_map_fix("$section:add", $dlnum, 1);
@@ -260,7 +266,7 @@ foreach $section (@brorder)
         #counts unique lines in configs
         my %slnums = ();
         my %mlnums = ();
-        
+        @cmdcs2 = ();
         for(my $c = 0; $c < scalar(@{$mbranches{"$section:add"}}); $c++)
         {
             my $key = $mbranches{"$section:add"}->[$c];
@@ -288,6 +294,7 @@ foreach $section (@brorder)
             }
             else
             {
+                push(@cmdcs2, $sbranches{"$section:add"}->[$c]);
                 push(@dellist, $line_nums_map{"$section:add"}->[$c]);
             }
         }
@@ -295,11 +302,13 @@ foreach $section (@brorder)
         foreach my $c (reverse @dellist)
         {
             my $cmd = "\/$section remove [ :pick [ \/$section find where ! (dynamic || default || builtin) ] $c ]";
+            push(@cmdcs, "\n\# removing: " . pop(@cmdcs2));
             push(@cmds, $cmd);
         }
         #adding lines
         foreach my $c (@addlist)
         {
+            push(@cmdcs, "\n\# adding:");
             push(@cmds, $mbranches{"$section:add"}->[$c]);
         }
 
@@ -316,6 +325,7 @@ foreach $section (@brorder)
             #simple replace config with all lines without deletion
             foreach my $cmd (@{$mbranches{"$section:set"}})
             {
+                push(@cmdcs, "\n\# setting:");
                 push(@cmds, $cmd);
             }
         }
@@ -344,11 +354,12 @@ else
         my $cnt = 0;
         foreach my $cmd (@cmds)
         {
-            warn "[$cnt] $cmd\n" if defined $args{'sshverbose'};
+            print shift(@cmdcs) . "\n" if defined $args{'sshverbose'};
+            print "[$cnt] $cmd\n" if defined $args{'sshverbose'};
             my($stdout, $stderr, $exit) = $ssh->cmd($cmd);
             if($exit != 0 || $stderr ne '' || $stdout ne '')
             {
-                warn "error $exit while executing command:\n$cmd\n$stdout$stderr\n\n";
+                print "error $exit while executing command:\n$cmd\n$stdout$stderr\n\n";
             }
             $cnt++;
         }
@@ -365,6 +376,7 @@ else
         my $cnt = 0;
         foreach my $cmd (@cmds)
         {
+            print shift(@cmdcs) . "\n" if defined $args{'sshverbose'};
             print "[$cnt] $cmd\n" if defined $args{'sshverbose'};
             print SSHPIPE "$cmd\n";
             $cnt++;
