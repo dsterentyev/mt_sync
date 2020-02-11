@@ -9,9 +9,9 @@ Abilities:
 - some sanity checking during processing configs
 
 Requirements:
-Unix/Linux environment, perl, ssh, sshpass, Algorithm::Diff perl module
+Unix/Linux environment, perl, ssh, sshpass, Algorithm::Diff, Net::SSH::Perl (optional) perl modules
 
 Usage:
 look at usage.txt
 
-Version: 0.001-20191119
+Version: 0.002-20200211
