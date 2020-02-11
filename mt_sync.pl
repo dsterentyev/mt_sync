@@ -349,7 +349,7 @@ else
 {
     if($use_internal_ssh)
     {
-        $ssh = Net::SSH::Perl->new($slave_ip, options => [ "Port $slave_ssh_port", "Protocol 2", "MACs +hmac-sha1", "debug" ] ) or die "error: ssh failed to connect $ip!\n";
+        $ssh = Net::SSH::Perl->new($slave_ip, options => [ "Port $slave_ssh_port", "Protocol 2", "MACs +hmac-sha1" ] ) or die "error: ssh failed to connect $ip!\n";
         $ssh->login($slave_ssh_login, $slave_ssh_password) or die "error: ssh failed to authenticate on $ip!\n"; 
         my $cnt = 0;
         foreach my $cmd (@cmds)
