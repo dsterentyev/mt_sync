@@ -349,7 +349,7 @@ else
 {
     if($use_internal_ssh)
     {
-        $ssh = Net::SSH::Perl->new($slave_ip, options => [ "Port $slave_ssh_port", "Protocol 2", "MACs +hmac-sha1" ] ) or die "error: ssh failed to connect $ip!\n";
+        $ssh = Net::SSH::Perl->new($slave_ip, options => [ "Port $slave_ssh_port", "Protocol 2", "MACs +hmac-sha1", "debug" ] ) or die "error: ssh failed to connect $ip!\n";
         $ssh->login($slave_ssh_login, $slave_ssh_password) or die "error: ssh failed to authenticate on $ip!\n"; 
         my $cnt = 0;
         foreach my $cmd (@cmds)
@@ -538,7 +538,7 @@ sub read_config
     {
         $ssh = Net::SSH::Perl->new($ip, options => [ "Port $port", "Protocol 2", "MACs +hmac-sha1" ] ) or die "error: ssh failed to connect $ip!\n";
         $ssh->login($user, $pass) or die "error: ssh failed to authenticate on $ip!\n"; 
-        my($stdout, $stderr, $exit) = $ssh->cmd('/export compact terse verbose');
+        my($stdout, $stderr, $exit) = $ssh->cmd('/export compact terse');
         if($exit != 0 || $stderr ne '')
         {
             die "error $exit while exporting config!\n$stdout$stderr\n";
@@ -546,7 +546,7 @@ sub read_config
         my @lines = split(/\r\n/, $stdout);
         return(\@lines);
     }
-    my $cmd = "/usr/bin/ssh $sshargs -p $port $user\@$ip '/export compact terse verbose'";
+    my $cmd = "/usr/bin/ssh $sshargs -p $port $user\@$ip '/export compact terse'";
     if($pass ne '')
     {
         $ENV{'SSHPASS'} = $pass;
