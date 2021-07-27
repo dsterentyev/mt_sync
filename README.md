@@ -9,7 +9,7 @@ Abilities:
 - some sanity checking during processing configs
 
 Requirements:
-Unix/Linux environment, perl, ssh, sshpass, Algorithm::Diff, Net::SSH::Perl (optional) perl modules
+Unix/Linux environment, perl, ssh, sshpass, Algorithm::Diff, Net::SSH2 (optional) perl modules
 
 Usage:
 look at usage.txt
