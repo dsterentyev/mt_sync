@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 #toggle it to 0 if you want use external ssh and sshpass
-my $use_internal_ssh = 1;
+my $use_internal_ssh = 2;
 
 #use Data::Dump qw/dump/;
 use Digest::SHA qw/sha512_hex/;
@@ -9,6 +9,10 @@ use Algorithm::Diff qw(diff);
 if($use_internal_ssh == 1)
 {
     use Net::SSH::Perl;
+}
+elsif($use_internal_ssh == 2)
+{
+    use Net::SSH2;
 }
 
 #don't edit this, use instead command line args or config file
@@ -28,6 +32,7 @@ $protective_comment = '';
 %branches_method_set = ();
 %branches_ordered = ();
 $old_configs_dir = '.';
+@ignored_notes = ();
 
 $conf = shift @ARGV || &help;
 
@@ -347,9 +352,9 @@ elsif(defined $args{'outconf'})
 #to slave router via ssh
 else
 {
-    if($use_internal_ssh)
+    if($use_internal_ssh == 1)
     {
-        $ssh = Net::SSH::Perl->new($slave_ip, options => [ "Port $slave_ssh_port", "Protocol 2", "MACs +hmac-sha1" ] ) or die "error: ssh failed to connect $ip!\n";
+        $ssh = Net::SSH::Perl->new($slave_ip, options => [ "Port $slave_ssh_port", "Protocol 2", "MACs +hmac-sha1", "debug" ] ) or die "error: ssh failed to connect $ip!\n";
         $ssh->login($slave_ssh_login, $slave_ssh_password) or die "error: ssh failed to authenticate on $ip!\n"; 
         my $cnt = 0;
         foreach my $cmd (@cmds)
@@ -363,6 +368,25 @@ else
             }
             $cnt++;
         }
+    }
+    elsif($use_internal_ssh == 2)
+    {
+        my $ssh2 = Net::SSH2->new();
+        $ssh2->connect($slave_ip, $slave_ssh_port) or $ssh2->die_with_error("error: ssh failed to connect $ip!\n");
+        $ssh2->auth_password($slave_ssh_login, $slave_ssh_password) or $ssh2->die_with_error("error: ssh failed to authenticate on $ip!\n");
+        my $cnt = 0;
+        foreach my $cmd (@cmds)
+        {
+            print shift(@cmdcs) . "\n" if defined $args{'sshverbose'};
+            print "[$cnt] $cmd\n" if defined $args{'sshverbose'};
+            my($stdout, $stderr, $exit) = netssh2cmd($ssh2, $cmd);
+            if($exit != 0 || $stderr ne '' || $stdout ne '')
+            {
+                print "error $exit while executing command:\n$cmd\n$stdout$stderr\n\n";
+            }
+            $cnt++;
+        }
+        $ssh2->disconnect;
     }
     else
     {
@@ -534,11 +558,25 @@ sub read_config
     my $pass = $_[2];
     my $port = $_[3];
     my $sshargs = $_[4];
-    if($use_internal_ssh)
+    if($use_internal_ssh == 1)
     {
-        $ssh = Net::SSH::Perl->new($ip, options => [ "Port $port", "Protocol 2", "MACs +hmac-sha1" ] ) or die "error: ssh failed to connect $ip!\n";
+        $ssh = Net::SSH::Perl->new($ip, options => [ "Port $port", "Protocol 2", "MACs +hmac-sha1", "debug" ] ) or die "error: ssh failed to connect $ip!\n";
         $ssh->login($user, $pass) or die "error: ssh failed to authenticate on $ip!\n"; 
         my($stdout, $stderr, $exit) = $ssh->cmd('/export compact terse');
+        if($exit != 0 || $stderr ne '')
+        {
+            die "error $exit while exporting config!\n$stdout$stderr\n";
+        }
+        my @lines = split(/\r\n/, $stdout);
+        return(\@lines);
+    }
+    elsif($use_internal_ssh == 2)
+    {
+        my $ssh2 = Net::SSH2->new();
+        $ssh2->connect($ip, $slave_ssh_port) or $ssh2->die_with_error("error: ssh failed to connect $ip!\n");
+        $ssh2->auth_password($slave_ssh_login, $slave_ssh_password) or $ssh2->die_with_error("error: ssh failed to authenticate on $ip!\n");
+        my($stdout, $stderr, $exit) = netssh2cmd($ssh2, '/export compact terse');
+        $ssh2->disconnect;
         if($exit != 0 || $stderr ne '')
         {
             die "error $exit while exporting config!\n$stdout$stderr\n";
@@ -560,7 +598,7 @@ sub read_config
 }
 
 #skip notes and combine multiline statements into single line
-#also checking for 
+#also checking for errors
 sub prefilter_config
 {
     my $contl = '';
@@ -584,8 +622,14 @@ sub prefilter_config
         {
             if($ncnt > 0 && $_[1] == 1)
             {
-                warn("In section '$bline' of master router config found followed RouterOS note: \n\#$_\n");
-                die("Possible config is in inconsistent state. Unpredictable results may accurs, stopping work\n");
+                $ignored_note_found = 0;
+                foreach $ignmsg (@ignored_notes)
+                {
+                    $ignored_note_found = 1 if /^\#\s*$ignmsg/;
+                }
+                next if $ignored_note_found == 1;
+                warn("In section '$bline' of master router config found followed RouterOS note: \n\$_\n");
+                die("Possible config is in inconsistent state. Unpredictable results may occurs, stopping work\n");
             }
             next;
         };
@@ -760,6 +804,33 @@ sub file_get_contents
     }
     close FILE;
     return(\@fcontent);
+}
+
+sub netssh2cmd
+{
+	my $ssh2 = $_[0];
+	my $cmd = $_[1];
+	my @result = ();
+	my $ssherr = '';
+	my $chan = $ssh2->channel() or $ssh2->die_with_error;
+#	print "executing $cmd \n";
+    $chan->exec($cmd) or $ssh2->die_with_error;
+	my ($out, $err) = ('', '');
+    while (! $chan->eof) 
+    {
+        if (my ($o, $e) = $chan->read2) 
+        {
+            $out .= $o;
+            $err .= $e;
+        }
+        elsif($ssh2->error != 0) 
+        {
+            $ssh2->die_with_error("netssh2cmd: can not retieving result while executing $cmd \n");
+        }
+    }
+	my $exit = $chan->exit_status;
+    $chan->close;
+    return ($out, $err, $exit);
 }
 
 #help message
